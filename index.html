@@ -17,153 +17,306 @@
     <source src="./style/KhuRungDomDom.mp3" type="audio/mpeg">
   </audio>
 
-  <script type="x-shader/x-fragment" id="fragmentShader">
-        #define PI 3.14159265359
+ <script type="x-shader/x-fragment" id="fragmentShader">
+#define PI 3.14159265359
 
-        uniform float u_ratio;
-        uniform vec2 u_cursor;
-        uniform float u_stop_time;
-        uniform float u_clean;
-        uniform vec2 u_stop_randomizer;
+uniform float u_ratio;
+uniform vec2 u_cursor;
+uniform float u_stop_time;
+uniform float u_clean;
+uniform vec2 u_stop_randomizer;
 
-        uniform sampler2D u_texture;
-        varying vec2 vUv;
+uniform sampler2D u_texture;
+varying vec2 vUv;
 
-        // --------------------------------
-        // 2D noise
+// --------------------------------
+// 2D noise
 
-        vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-        vec2 mod289(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-        vec3 permute(vec3 x) { return mod289(((x*34.0)+1.0)*x); }
-        float snoise(vec2 v) {
-            const vec4 C = vec4(0.211324865405187, 0.366025403784439, -0.577350269189626, 0.024390243902439);
-            vec2 i = floor(v + dot(v, C.yy));
-            vec2 x0 = v - i + dot(i, C.xx);
-            vec2 i1;
-            i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
-            vec4 x12 = x0.xyxy + C.xxzz;
-            x12.xy -= i1;
-            i = mod289(i);
-            vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0)) + i.x + vec3(0.0, i1.x, 1.0));
-            vec3 m = max(0.5 - vec3(dot(x0, x0), dot(x12.xy, x12.xy), dot(x12.zw, x12.zw)), 0.0);
-            m = m*m;
-            m = m*m;
-            vec3 x = 2.0 * fract(p * C.www) - 1.0;
-            vec3 h = abs(x) - 0.5;
-            vec3 ox = floor(x + 0.5);
-            vec3 a0 = x - ox;
-            m *= 1.79284291400159 - 0.85373472095314 * (a0*a0 + h*h);
-            vec3 g;
-            g.x = a0.x * x0.x + h.x * x0.y;
-            g.yz = a0.yz * x12.xz + h.yz * x12.yw;
-            return 130.0 * dot(m, g);
-        }
+vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec2 mod289(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec3 permute(vec3 x) { return mod289(((x*34.0)+1.0)*x); }
+float snoise(vec2 v) {
+    const vec4 C = vec4(0.211324865405187, 0.366025403784439, -0.577350269189626, 0.024390243902439);
+    vec2 i = floor(v + dot(v, C.yy));
+    vec2 x0 = v - i + dot(i, C.xx);
+    vec2 i1;
+    i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+    vec4 x12 = x0.xyxy + C.xxzz;
+    x12.xy -= i1;
+    i = mod289(i);
+    vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0)) + i.x + vec3(0.0, i1.x, 1.0));
+    vec3 m = max(0.5 - vec3(dot(x0, x0), dot(x12.xy, x12.xy), dot(x12.zw, x12.zw)), 0.0);
+    m = m*m;
+    m = m*m;
+    vec3 x = 2.0 * fract(p * C.www) - 1.0;
+    vec3 h = abs(x) - 0.5;
+    vec3 ox = floor(x + 0.5);
+    vec3 a0 = x - ox;
+    m *= 1.79284291400159 - 0.85373472095314 * (a0*a0 + h*h);
+    vec3 g;
+    g.x = a0.x * x0.x + h.x * x0.y;
+    g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+    return 130.0 * dot(m, g);
+}
 
+// Функция для создания неровностей на краях лепестков
+float get_petal_jaggedness(vec2 p, float petal_angle, float frequency) {
+    // Добавляем неровности на основе шума
+    float jagged = snoise(p * 15.0) * 0.08;
+    jagged += snoise(p * 25.0 + vec2(2.0, 3.0)) * 0.05;
+    
+    // Добавляем периодические неровности
+    jagged += sin(petal_angle * frequency * 4.0) * 0.03;
+    jagged += cos(petal_angle * frequency * 6.0 + 1.5) * 0.02;
+    
+    return jagged;
+}
 
-        float get_flower_shape(vec2 _p, float _pet_n, float _angle, float _outline) {
-            _angle *= 3.;
+// УЛУЧШЕННАЯ ФУНКЦИЯ ФОРМЫ ЦВЕТКА (из первого шейдера)
+float get_flower_shape_improved(vec2 _p, float _pet_n, float _angle, float _outline) {
+    _angle *= 3.;
 
-            _p = vec2(_p.x * cos(_angle) - _p.y * sin(_angle),
+    _p = vec2(_p.x * cos(_angle) - _p.y * sin(_angle),
             _p.x * sin(_angle) + _p.y * cos(_angle));
 
-            float a = atan(_p.y, _p.x);
+    float a = atan(_p.y, _p.x);
+    float dist = length(_p);
 
-            float flower_sectoral_shape = pow(abs(sin(a * _pet_n)), .4) + .25;
+    // Создаем трапециевидную форму с меньшей стороной у основания
+    float trapezoid_factor = 1.0 - smoothstep(0.0, 0.5, dist) * 0.4;
+    float petal_width = pow(abs(sin(a * _pet_n)), 0.4) * trapezoid_factor;
+    
+    // Добавляем неровности к форме лепестков
+    float jaggedness = get_petal_jaggedness(_p, a * _pet_n, _pet_n);
+    petal_width += jaggedness;
 
-            vec2 flower_size_range = vec2(.03, .1);
-            float size = flower_size_range[0] + u_stop_randomizer[0] * flower_size_range[1];
+    // Увеличенный минимальный размер бутона в 2 раза
+    vec2 flower_size_range = vec2(.09, .1);
+    float size = flower_size_range[0] + u_stop_randomizer[0] * flower_size_range[1];
 
-            float flower_radial_shape = pow(length(_p) / size, 2.);
-            flower_radial_shape -= .1 * sin(8. * a); // add noise
-            flower_radial_shape = max(.1, flower_radial_shape);
-            flower_radial_shape += smoothstep(0., 0.03, -_p.y + .2 * abs(_p.x));
+    // Модифицируем радиальную форму для трапециевидности
+    float base_shape = dist / size;
+    
+    // Делаем лепестки уже у основания (трапециевидная форма)
+    float taper = 1.0 + smoothstep(0.0, 0.7, base_shape) * 0.5;
+    base_shape *= taper;
+    
+    // Добавляем больше неровностей
+    base_shape += get_petal_jaggedness(_p, a, 8.0) * 0.3;
+    base_shape = pow(base_shape, 2.0);
+    
+    // Добавляем текстуру поверхности лепестков
+    float surface_texture = snoise(_p * 30.0) * 0.05;
+    base_shape += surface_texture;
 
-            float grow_time = step(.25, u_stop_time) * pow(u_stop_time, .3);
-            float flower_shape = 1. - smoothstep(0., flower_sectoral_shape, _outline * flower_radial_shape / grow_time);
+    float grow_time = step(.25, u_stop_time) * pow(u_stop_time, .3);
+    float flower_shape = 1.0 - smoothstep(0.0, petal_width + 0.25, _outline * base_shape / grow_time);
 
-            flower_shape *= (1. - step(1., grow_time));
+    flower_shape *= (1. - step(1., grow_time));
 
-            return flower_shape;
-        }
+    return flower_shape;
+}
 
-        float get_stem_shape(vec2 _p, vec2 _uv, float _w, float _angle) {
+// ОРИГИНАЛЬНАЯ ФУНКЦИЯ ФОРМЫ ЦВЕТКА (из второго шейдера)
+float get_flower_shape_original(vec2 _p, float _pet_n, float _angle, float _outline) {
+    _angle *= 3.;
 
-          _w = max(.004, _w);
+    _p = vec2(_p.x * cos(_angle) - _p.y * sin(_angle),
+            _p.x * sin(_angle) + _p.y * cos(_angle));
+
+    float a = atan(_p.y, _p.x);
+
+    float flower_sectoral_shape = pow(abs(sin(a * _pet_n)), .4) + .25;
+
+    vec2 flower_size_range = vec2(.03, .1);
+    float size = flower_size_range[0] + u_stop_randomizer[0] * flower_size_range[1];
+
+    float flower_radial_shape = pow(length(_p) / size, 2.);
+    flower_radial_shape -= .1 * sin(8. * a); // add noise
+    flower_radial_shape = max(.1, flower_radial_shape);
+    flower_radial_shape += smoothstep(0., 0.03, -_p.y + .2 * abs(_p.x));
+
+    float grow_time = step(.25, u_stop_time) * pow(u_stop_time, .3);
+    float flower_shape = 1. - smoothstep(0., flower_sectoral_shape, _outline * flower_radial_shape / grow_time);
+
+    flower_shape *= (1. - step(1., grow_time));
+
+    return flower_shape;
+}
+
+float get_stem_shape(vec2 _p, vec2 _uv, float _w, float _angle) {
+    _w = max(.004, _w);
+    
+    float x_offset = _p.y * sin(_angle);
+    x_offset *= pow(3. * _uv.y, 2.);
+    _p.x -= x_offset;
+
+    // add horizontal noise to the cursor coordinale
+    float noise_power = .5;
+    float cursor_horizontal_noise = noise_power * snoise(2. * _uv * u_stop_randomizer[0]);
+    cursor_horizontal_noise *= pow(dot(_p.y, _p.y), .6);// moise to be zero at cursor
+    cursor_horizontal_noise *= pow(dot(_uv.y, _uv.y), .3);// moise to be zero at bottom
+    _p.x += cursor_horizontal_noise;
+
+    // vertical line through the cursor point (_p.x)
+    float left = smoothstep(-_w, 0., _p.x);
+    float right = 1. - smoothstep(0., _w, _p.x);
+    float stem_shape = left * right;
+
+    // make it grow + don't go up to the cursor point
+    float grow_time = 1. - smoothstep(0., .2, u_stop_time);
+    float stem_top_mask = smoothstep(0., pow(grow_time, .5), .03 -_p.y);
+    stem_shape *= stem_top_mask;
+
+    // stop drawing once done
+    stem_shape *= (1. - step(.17, u_stop_time));
+
+    return stem_shape;
+}
+
+void main() {
+    vec3 base = texture2D(u_texture, vUv).xyz;
+
+    vec2 uv = vUv;
+    uv.x *= u_ratio;
+    vec2 cursor = vUv - u_cursor.xy;
+    cursor.x *= u_ratio;
+    
+    // Определяем какой тип цветка использовать на основе случайного значения
+    float flower_type_selector = mod(u_stop_randomizer[1] * 10.0, 5.0);
+    
+    // Стебли зеленые
+    vec3 stem_color = vec3(0.3, 0.6 + u_stop_randomizer[0] * 0.2, 0.25); // Нежно-зеленый
+
+    float angle = .5 * (u_stop_randomizer[0] - .5);
+
+    float stem_shape = get_stem_shape(cursor, uv, .003, angle);
+    stem_shape += get_stem_shape(cursor + vec2(0., .2 + .5 * u_stop_randomizer[0]), uv, .003, angle);
+    float stem_mask = 1. - get_stem_shape(cursor, uv, .004, angle);
+    stem_mask -= get_stem_shape(cursor + vec2(0., .2 + .5 * u_stop_randomizer[0]), uv, .004, angle);
+
+    float petals_back_number = 1. + floor(u_stop_randomizer[0] * 2.);
+    float angle_offset = -(2. * step(0., angle) - 1.) * .1 * u_stop_time;
+    
+    // Используем разные типы цветков для заднего и переднего плана
+    float flower_back_shape, flower_front_shape;
+    float flower_back_mask, flower_front_mask;
+    
+    if (flower_type_selector < 1.0) {
+        // Улучшенные цветы (первый тип)
+        flower_back_shape = get_flower_shape_improved(cursor, petals_back_number, angle + angle_offset, 1.5);
+        flower_back_mask = 1. - get_flower_shape_improved(cursor, petals_back_number, angle + angle_offset, 1.6);
         
-            float x_offset = _p.y * sin(_angle);
-            x_offset *= pow(3. * _uv.y, 2.);
-            _p.x -= x_offset;
+        float petals_front_number = 2. + floor(u_stop_randomizer[1] * 2.);
+        flower_front_shape = get_flower_shape_improved(cursor, petals_front_number, angle, 1.);
+        flower_front_mask = 1. - get_flower_shape_improved(cursor, petals_front_number, angle, .95);
+    } else {
+        // Оригинальные цветы (второй тип)
+        flower_back_shape = get_flower_shape_original(cursor, petals_back_number, angle + angle_offset, 1.5);
+        flower_back_mask = 1. - get_flower_shape_original(cursor, petals_back_number, angle + angle_offset, 1.6);
+        
+        float petals_front_number = 2. + floor(u_stop_randomizer[1] * 2.);
+        flower_front_shape = get_flower_shape_original(cursor, petals_front_number, angle, 1.);
+        flower_front_mask = 1. - get_flower_shape_original(cursor, petals_front_number, angle, .95);
+    }
 
-            // add horizontal noise to the cursor coordinale
-            float noise_power = .5;
-            float cursor_horizontal_noise = noise_power * snoise(2. * _uv * u_stop_randomizer[0]);
-            cursor_horizontal_noise *= pow(dot(_p.y, _p.y), .6);// moise to be zero at cursor
-            cursor_horizontal_noise *= pow(dot(_uv.y, _uv.y), .3);// moise to be zero at bottom
-            _p.x += cursor_horizontal_noise;
+    vec3 color = base;
+    
+    // Убеждаемся, что стебель рисуется ПОД цветком
+    color *= stem_mask;
+    color += (stem_shape * stem_color);
+    
+    // Теперь рисуем цветок поверх стебля
+    color *= flower_back_mask;
+    color *= flower_front_mask;
 
-            // vertical line through the cursor point (_p.x)
-            float left = smoothstep(-_w, 0., _p.x);
-            float right = 1. - smoothstep(0., _w, _p.x);
-            float stem_shape = left * right;
+    // 10 вариаций цветов для бутонов
+    float flower_type = mod(u_stop_randomizer[1] * 30.0, 30.0);
+    vec3 flower_color;
 
-            // make it grow + don't go up to the cursor point
-            float grow_time = 1. - smoothstep(0., .2, u_stop_time);
-            float stem_top_mask = smoothstep(0., pow(grow_time, .5), .03 -_p.y);
-            stem_shape *= stem_top_mask;
+if (flower_type < 1.0) {
+    flower_color = vec3(0.95, 0.7, 0.9); // Нежно-розовый (белая основа)
+} else if (flower_type < 2.0) {
+    flower_color = vec3(0.8, 0.7, 0.95); // Сиреневый (белая основа)
+} else if (flower_type < 3.0) {
+    flower_color = vec3(0.7, 0.8, 0.95); // Голубоватый (белая основа)
+} else if (flower_type < 4.0) {
+    flower_color = vec3(0.95, 0.8, 0.7); // Персиковый (белая основа)
+} else if (flower_type < 5.0) {
+    flower_color = vec3(0.9, 0.95, 0.7); // Салатовый (белая основа)
+} else if (flower_type < 6.0) {
+    flower_color = vec3(0.85, 0.7, 0.9); // Орхидея (белая основа)
+} else if (flower_type < 7.0) {
+    flower_color = vec3(0.9, 0.5, 0.7); // Яркий розово-красный
+} else if (flower_type < 8.0) {
+    flower_color = vec3(0.6, 0.8, 0.4); // Яркий лаймово-зеленый
+} else if (flower_type < 9.0) {
+    flower_color = vec3(0.5, 0.7, 0.9); // Яркий сине-голубой
+} else if (flower_type < 10.0) {
+    flower_color = vec3(0.9, 0.6, 0.4); // Яркий оранжево-коралловый
+} else if (flower_type < 11.0) {
+    flower_color = vec3(0.7, 0.4, 0.9); // Яркий фиолетово-пурпурный
+} else if (flower_type < 12.0) {
+    flower_color = vec3(0.4, 0.9, 0.6); // Яркий зелено-бирюзовый
+} else if (flower_type < 13.0) {
+    flower_color = vec3(0.9, 0.8, 0.3); // Яркий желто-персиковый
+} else if (flower_type < 14.0) {
+    flower_color = vec3(0.3, 0.6, 0.9); // Яркий сине-фиолетовый
+} else if (flower_type < 15.0) {
+    flower_color = vec3(0.9, 0.4, 0.6); // Яркий фуксия
+} else if (flower_type < 16.0) {
+    flower_color = vec3(0.5, 0.9, 0.8); // Яркий бирюзово-зеленый
+} else if (flower_type < 17.0) {
+    flower_color = vec3(0.8, 0.3, 0.9); // Яркий пурпурно-фиолетовый
+} else if (flower_type < 18.0) {
+    flower_color = vec3(0.9, 0.7, 0.2); // Яркий оранжево-желтый
+} else if (flower_type < 19.0) {
+    flower_color = vec3(0.2, 0.8, 0.9); // Яркий голубо-синий
+} else if (flower_type < 20.0) {
+    flower_color = vec3(0.9, 0.5, 0.8); // Яркий розово-пурпурный
+} else if (flower_type < 21.0) {
+    flower_color = vec3(0.6, 0.9, 0.5); // Яркий зеленый лайм
+} else if (flower_type < 22.0) {
+    flower_color = vec3(0.4, 0.5, 0.9); // Яркий синий кобальт
+} else if (flower_type < 23.0) {
+    flower_color = vec3(0.9, 0.6, 0.5); // Яркий кораллово-оранжевый
+} else if (flower_type < 24.0) {
+    flower_color = vec3(0.7, 0.9, 0.4); // Яркий желто-зеленый
+} else if (flower_type < 25.0) {
+    flower_color = vec3(0.8, 0.7, 0.9); // Пастельный сиреневый
+} else if (flower_type < 26.0) {
+    flower_color = vec3(0.7, 0.9, 0.8); // Пастельный мятный
+} else if (flower_type < 27.0) {
+    flower_color = vec3(0.9, 0.8, 0.7); // Пастельный персиковый
+} else if (flower_type < 28.0) {
+    flower_color = vec3(0.8, 0.8, 0.9); // Пастельный лавандовый
+} else if (flower_type < 29.0) {
+    flower_color = vec3(0.9, 0.7, 0.8); // Пастельный розовый
+} else {
+    flower_color = vec3(0.7, 0.8, 0.9); // Пастельный голубой
+}
 
-            // stop drawing once done
-            stem_shape *= (1. - step(.17, u_stop_time));
+    // Добавляем цвет ТОЛЬКО к бутонам
+    color += (flower_back_shape * flower_color);
+    color += (flower_front_shape * flower_color);
 
-            return stem_shape;
-        }
+    // Усиливаем текстуру лепестков (только для улучшенных цветов)
+    if (flower_type_selector < 1.0) {
+        float texture_strength = snoise(cursor * 50.0) * 0.1;
+        vec3 textured_flower = mix(color, flower_color * 1.2, 
+                                  (flower_back_shape + flower_front_shape) * texture_strength);
+        color = mix(color, textured_flower, flower_back_shape + flower_front_shape);
+    }
 
-        void main() {
+    // Более мягкие цветовые переходы
+    color.r *= 1. - (.3 * flower_back_shape * flower_front_shape);
+    color.b *= 1. - (.4 * flower_back_shape * flower_front_shape);
 
-            vec3 base = texture2D(u_texture, vUv).xyz;
+    color *= u_clean;
 
-            vec2 uv = vUv;
-            uv.x *= u_ratio;
-            vec2 cursor = vUv - u_cursor.xy;
-            cursor.x *= u_ratio;
-            
-            vec3 stem_color = vec3(.1 + u_stop_randomizer[0] * .6, .6, .2);
-            vec3 flower_color = vec3(.6 + .5 * u_stop_randomizer[1], .1, .9 - .5 * u_stop_randomizer[1]);
-
-            float angle = .5 * (u_stop_randomizer[0] - .5);
-
-            float stem_shape = get_stem_shape(cursor, uv, .003, angle);
-            stem_shape += get_stem_shape(cursor + vec2(0., .2 + .5 * u_stop_randomizer[0]), uv, .003, angle);
-            float stem_mask = 1. - get_stem_shape(cursor, uv, .004, angle);
-            stem_mask -= get_stem_shape(cursor + vec2(0., .2 + .5 * u_stop_randomizer[0]), uv, .004, angle);
-
-            float petals_back_number = 1. + floor(u_stop_randomizer[0] * 2.);
-            float angle_offset = -(2. * step(0., angle) - 1.) * .1 * u_stop_time;
-            float flower_back_shape = get_flower_shape(cursor, petals_back_number, angle + angle_offset, 1.5);
-            float flower_back_mask = 1. - get_flower_shape(cursor, petals_back_number, angle + angle_offset, 1.6);
-
-            float petals_front_number = 2. + floor(u_stop_randomizer[1] * 2.);
-            float flower_front_shape = get_flower_shape(cursor, petals_front_number, angle, 1.);
-            float flower_front_mask = 1. - get_flower_shape(cursor, petals_front_number, angle, .95);
-
-            vec3 color = base;
-            color *= stem_mask;
-            color *= flower_back_mask;
-            color *= flower_front_mask;
-
-            color += (stem_shape * stem_color);
-
-            color += (flower_back_shape * (flower_color + vec3(0., .8 * u_stop_time, 0.)));
-            color += (flower_front_shape * flower_color);
-
-            color.r *= 1. - (.5 * flower_back_shape * flower_front_shape);
-            color.b *= 1. - (flower_back_shape * flower_front_shape);
-
-
-            color *= u_clean;
-
-            gl_FragColor = vec4(color, 1.);
-        }
-  </script>
+    gl_FragColor = vec4(color, 1.);
+}
+</script>
   <script type="x-shader/x-vertex" id="vertexShader">
     varying vec2 vUv;
     void main() {
@@ -175,3 +328,4 @@
   <script src="./style/script.js"></script>
 </body>
 </html>
+
